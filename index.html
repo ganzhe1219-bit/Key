@@ -10,16 +10,19 @@
   <style>
     body { font-family: '微軟正黑體', sans-serif; background-color: #f4f5f7; margin: 0; padding: 20px; }
     .container { max-width: 400px; margin: 0 auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-    h2 { text-align: center; color: #333; }
+    h2 { text-align: center; color: #333; margin-bottom: 5px; }
+    .subtitle { text-align: center; color: #666; font-size: 14px; margin-bottom: 20px; }
     
-    /* 借用區塊 */
-    .borrow-section { padding-bottom: 15px; border-bottom: 2px dashed #eee; margin-bottom: 15px; }
-    select, button { width: 100%; padding: 12px; margin-top: 10px; border-radius: 8px; font-size: 16px; box-sizing: border-box; }
-    select { border: 1px solid #ccc; }
+    .section { display: none; } /* 預設隱藏區塊 */
+    
+    input, select, button { width: 100%; padding: 12px; margin-top: 10px; border-radius: 8px; font-size: 16px; box-sizing: border-box; }
+    select, input { border: 1px solid #ccc; }
     select option:disabled { color: #999; background-color: #eee; }
+    
+    .btn-submit { background-color: #0056b3; color: white; border: none; font-weight: bold; margin-top: 15px; }
     .btn-borrow { background-color: #00B900; color: white; border: none; font-weight: bold; margin-top: 15px; }
     
-    /* 擁有的鑰匙卡片區塊 */
+    .borrow-section { padding-bottom: 15px; border-bottom: 2px dashed #eee; margin-bottom: 15px; }
     .my-keys-title { font-size: 16px; color: #555; font-weight: bold; margin-bottom: 10px; }
     .key-card { background: #eef2ff; padding: 15px; border-radius: 8px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; border: 1px solid #c7d2fe; }
     .key-info { display: flex; flex-direction: column; }
@@ -28,16 +31,29 @@
     .btn-return-small { background-color: #ff4d4d; color: white; border: none; padding: 8px 15px; border-radius: 6px; font-weight: bold; width: auto; margin: 0; }
     
     #loading { text-align: center; color: #666; font-size: 16px; margin-top: 20px; }
-    #main-content { display: none; }
   </style>
 </head>
 <body>
 
 <div class="container">
   <h2>鑰匙領用紀錄</h2>
-  <div id="loading">讀取狀態中，請稍候...</div>
+  <div class="subtitle" id="greeting">讀取身分中...</div>
 
-  <div id="main-content">
+  <div id="loading">連線資料庫中，請稍候...</div>
+
+  <!-- 【新增】註冊綁定畫面 -->
+  <div id="register-section" class="section">
+    <label style="color:#e74c3c; font-weight:bold; font-size:14px;">⚠️ 系統查無您的身分，請先完成綁定</label>
+    <select id="regDistrict">
+      <option value="五股區">五股區</option>
+      <!-- 若有跨區需求可在此補上其他區隊 -->
+    </select>
+    <input type="text" id="regName" placeholder="請輸入真實姓名">
+    <button class="btn-submit" onclick="registerUser()">送出綁定</button>
+  </div>
+
+  <!-- 主畫面 (借還鑰匙) -->
+  <div id="main-content" class="section">
     <!-- 上半部：借取新鑰匙 -->
     <div class="borrow-section">
       <label for="vehicleSelect" style="color:#555; font-weight:bold;">取用新鑰匙：</label>
@@ -49,20 +65,32 @@
 
     <!-- 下半部：目前借用的鑰匙清單 -->
     <div class="my-keys-title">我目前借用的鑰匙 (<span id="keyCount">0</span>把)</div>
-    <div id="myKeysContainer">
-      <!-- 卡片將由 JS 動態生成 -->
-    </div>
+    <div id="myKeysContainer"></div>
   </div>
 </div>
 
 <script>
-  const GAS_URL = "https://script.google.com/macros/s/AKfycby0p7hexUWaJ0QfmNcaYbTZEoHWLRXFBM0ouIQoae21xq3Cjvfi5sU0SAl6NSplOeVf/exec"; 
-  const LIFF_ID = "2011658008-KBNlpzVl"; 
-  const vehicleList = ["111-AAA", "222-BBB", "333-CCC", "KEQ-1234"]; 
+  const GAS_URL = "你的_GAS_網址"; 
+  const LIFF_ID = "你的_LIFF_ID"; 
   
-  let userProfile = { uid: "", name: "", district: "五股區" };
+  // 完整車輛清單 (94台)
+  const vehicleList = [
+    "KEQ-0239", "025-BX", "KEQ-0250", "KEQ-0251", "KEQ-0252", "026-BX", "029-BY", "042-R5", "067-TH", 
+    "KEC-0719", "KEC-0723", "KEX-0776", "KED-0815", "095-VK", "BBN-0971", "BBN-0972", "ALA-1091", 
+    "KEE-1110", "120-VK", "128-BY", "1457-L2", "AXC-1712", "AXC-1715", "193-BX", "195-BX", "201-BX", 
+    "KEG-2050", "225-UY", "AKT-2278", "247-BX", "272-BY", "KEG-2815", "286-BY", "BTB-2892", "BTB-2893", 
+    "KEG-2911", "295-R6", "AAC-298", "KEU-3230", "KEJ-3529", "363-BY", "KEJ-3697", "KEL-3996", 
+    "4021-T2", "4022-T2", "412-VK", "422-UM", "4427-YM", "4428-YM", "4433-YM", "447-R5", "4721-K9", 
+    "4723-K9", "477-BX", "KEU-5026", "KEU-5231", "KEU-5237", "5502-G3", "KEU-5567", "KEU-5569", 
+    "KEU-5573", "KEU-6101", "620-UY", "KEJ-6282", "6390-VL", "649-SL", "650-SL", "653-BX", "655-BX", 
+    "677-BX", "678-BX", "ALA-6913", "KEP-7116", "BEN-7251", "7435-A5", "7436-A5", "7492-YL", "AAC-791", 
+    "8F-9247", "BZY-8173", "822-TW", "KEV-8665", "APK-9072", "9080-RH", "9081-RH", "912-R7", "APG-9263",
+    "挖土機719", "堆高機53", "鏟裝機55", "鏟裝機56", "鏟裝機60", "堆高機61", "鏟裝機62"
+  ];
+  
+  let userProfile = { uid: "", name: "", district: "" }; // 姓名與區隊將由 GAS 名冊回傳覆蓋
   let timerInterval = null;
-  let activeKeysData = []; // 存放目前持有的鑰匙資料以供計時器運作
+  let activeKeysData = [];
 
   window.onload = function() {
     liff.init({ liffId: LIFF_ID }).then(() => {
@@ -70,7 +98,6 @@
       else {
         liff.getProfile().then(profile => {
           userProfile.uid = profile.userId;
-          userProfile.name = profile.displayName;
           checkStatus();
         });
       }
@@ -80,6 +107,7 @@
   function checkStatus() {
     document.getElementById('loading').style.display = 'block';
     document.getElementById('main-content').style.display = 'none';
+    document.getElementById('register-section').style.display = 'none';
     clearInterval(timerInterval);
 
     fetch(GAS_URL, {
@@ -90,6 +118,19 @@
     .then(response => response.json())
     .then(data => {
       document.getElementById('loading').style.display = 'none';
+      
+      // 判斷是否已綁定
+      if (!data.isRegistered) {
+        document.getElementById('register-section').style.display = 'block';
+        document.getElementById('greeting').innerText = "未綁定身分";
+        return;
+      }
+
+      // 已綁定，寫入真實姓名與區隊
+      userProfile.name = data.userName;
+      userProfile.district = data.district;
+      document.getElementById('greeting').innerText = `${userProfile.district} ${userProfile.name}，您好`;
+      
       document.getElementById('main-content').style.display = 'block';
       
       renderVehicleOptions(data.borrowedVehicles);
@@ -98,6 +139,31 @@
     .catch(err => Swal.fire('錯誤', '網路連線異常，請重試', 'error'));
   }
 
+  // 註冊綁定功能
+  function registerUser() {
+    const name = document.getElementById('regName').value.trim();
+    const district = document.getElementById('regDistrict').value;
+    
+    if (!name) return Swal.fire('提醒', '請填寫真實姓名', 'warning');
+
+    Swal.fire({ title: '綁定中...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+
+    fetch(GAS_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ action: "registerUser", uid: userProfile.uid, name: name, district: district })
+    })
+    .then(res => res.json())
+    .then(data => {
+      if (data.success) {
+        Swal.fire('成功', data.message, 'success').then(() => checkStatus());
+      } else {
+        Swal.fire('失敗', data.message, 'error');
+      }
+    });
+  }
+
+  // 渲染車號下拉選單 (被借走的車顯示「誰」借走，這個誰就是真實姓名)
   function renderVehicleOptions(borrowedList) {
     const select = document.getElementById('vehicleSelect');
     select.innerHTML = '<option value="">-- 請選擇車號 --</option>';
@@ -108,6 +174,7 @@
       option.value = vehicleNo;
       
       if (borrowedInfo) {
+        // 反灰提示，並顯示借用人的真實姓名
         option.text = `${vehicleNo} (已被 ${borrowedInfo.borrower} 取用)`;
         option.disabled = true;
       } else {
@@ -117,7 +184,6 @@
     });
   }
 
-  // 渲染個人鑰匙卡片
   function renderMyKeys(myKeys) {
     activeKeysData = myKeys;
     document.getElementById('keyCount').innerText = myKeys.length;
@@ -167,7 +233,6 @@
     });
   }
 
-  // 歸還特定列數的鑰匙
   function returnKey(rowIndex, vehicleNo) {
     Swal.fire({
       title: `歸還 ${vehicleNo}？`,
@@ -181,9 +246,7 @@
         fetch(GAS_URL, {
           method: "POST",
           headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: new URLSearchParams({
-            action: "returnKey", uid: userProfile.uid, rowIndex: rowIndex
-          })
+          body: new URLSearchParams({ action: "returnKey", uid: userProfile.uid, rowIndex: rowIndex })
         })
         .then(res => res.json())
         .then(data => {
@@ -197,7 +260,6 @@
     });
   }
 
-  // 統一處理多個計時器
   function startMultiTimers() {
     function updateTimers() {
       const now = new Date().getTime();
@@ -216,7 +278,6 @@
         }
       });
     }
-    
     updateTimers(); 
     timerInterval = setInterval(updateTimers, 1000); 
   }
